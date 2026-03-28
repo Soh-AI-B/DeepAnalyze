@@ -116,17 +116,16 @@ class DeepAnalyzeVLLM:
                 elif stop_reason == "</Ask>":
                     ans += "</Ask>"
 
-                response_message.append(ans)
+                 response_message.append(ans)
 
-                # Check for <Ask> block (complete)
-                ask_match = re.search(r"<Ask>.*?</Ask>", ans, re.DOTALL)
-                if ask_match:
-                    break
+                 # Check for <Ask> (any occurrence) - stop generation if Ask token appears
+                 if "<Ask>" in ans:
+                     break
 
-                # Check for <Code> block
-                code_match = re.search(r"<Code>(.*?)</Code>", ans, re.DOTALL)
-                if not code_match or "<Answer>" in ans:
-                    break
+                 # Check for <Code> block
+                 code_match = re.search(r"<Code>(.*?)</Code>", ans, re.DOTALL)
+                 if not code_match or "<Answer>" in ans:
+                     break
 
                 code_content = code_match.group(1).strip()
                 md_match = re.search(r"```(?:python)?(.*?)```", code_content, re.DOTALL)

@@ -182,7 +182,7 @@ async def chat_completions(
                         if "</Answer>" in cur_res:
                             finished = True
                             break
-                        if re.search(r"<Ask>.*?</Ask>", cur_res, re.DOTALL):
+                        if "<Ask>" in cur_res:
                             ask_detected = True
                             finished = True
                             break
@@ -337,7 +337,7 @@ async def chat_completions(
                     if "</Answer>" in cur_res:
                         finished = True
                         break
-                    if re.search(r"<Ask>.*?</Ask>", cur_res, re.DOTALL):
+                    if "<Ask>" in cur_res:
                         ask_detected = True
                         finished = True
                         break
