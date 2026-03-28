@@ -241,8 +241,8 @@ async def chat_completions(
                             vllm_messages.append({"role": "execute", "content": exe_output})
                         else:
                             finished = True
-                     else:
-                         finished = True
+                    else:
+                        finished = True
 
                 # Handle Ask token: if Ask appears, stop and wait for user response
                 if not ask_detected and "<Ask>" in cur_res:
