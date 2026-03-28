@@ -32,8 +32,9 @@ class DeepAnalyzeVLLM:
         stderr_capture = io.StringIO()
 
         try:
-            with contextlib.redirect_stdout(stdout_capture), contextlib.redirect_stderr(
-                stderr_capture
+            with (
+                contextlib.redirect_stdout(stdout_capture),
+                contextlib.redirect_stderr(stderr_capture),
             ):
                 exec(code_str, {})
             output = stdout_capture.getvalue()
@@ -92,7 +93,7 @@ class DeepAnalyzeVLLM:
                     "temperature": temperature,
                     "max_tokens": max_tokens,
                     "add_generation_prompt": False,
-                    "stop": ["</Code>"],
+                    "stop": ["</Code>", "</Ask>"],
                 }
                 if top_p is not None:
                     payload["top_p"] = top_p
@@ -109,10 +110,18 @@ class DeepAnalyzeVLLM:
                 response_data = response.json()
 
                 ans = response_data["choices"][0]["message"]["content"]
-                if response_data["choices"][0].get("stop_reason") == "</Code>":
+                stop_reason = response_data["choices"][0].get("stop_reason")
+                if stop_reason == "</Code>":
                     ans += "</Code>"
+                elif stop_reason == "</Ask>":
+                    ans += "</Ask>"
 
                 response_message.append(ans)
+
+                # Check for <Ask> block (complete)
+                ask_match = re.search(r"<Ask>.*?</Ask>", ans, re.DOTALL)
+                if ask_match:
+                    break
 
                 # Check for <Code> block
                 code_match = re.search(r"<Code>(.*?)</Code>", ans, re.DOTALL)

@@ -7,6 +7,7 @@ import json
 import os
 import time
 import uuid
+import re
 import shutil
 from pathlib import Path
 from typing import List, Optional, Dict, Any
@@ -21,9 +22,14 @@ from config import API_BASE, DEFAULT_TEMPERATURE, STOP_TOKEN_IDS, MAX_NEW_TOKENS
 from models import ChatCompletionRequest, ChatCompletionResponse, ChatCompletionChoice
 from storage import storage
 from utils import (
-    get_thread_workspace, prepare_vllm_messages, execute_code_safe,
-    execute_code_safe_async, WorkspaceTracker,render_file_block,
-    generate_report_from_messages, extract_code_from_segment
+    get_thread_workspace,
+    prepare_vllm_messages,
+    execute_code_safe,
+    execute_code_safe_async,
+    WorkspaceTracker,
+    render_file_block,
+    generate_report_from_messages,
+    extract_code_from_segment,
 )
 
 Chinese_matplot_str = """
@@ -73,7 +79,9 @@ async def chat_completions(
         # Use existing thread
         thread = storage.get_thread(existing_thread_id)
         if not thread:
-            raise HTTPException(status_code=400, detail=f"Thread {existing_thread_id} not found")
+            raise HTTPException(
+                status_code=400, detail=f"Thread {existing_thread_id} not found"
+            )
         workspace_dir = get_thread_workspace(existing_thread_id)
         generated_dir = os.path.join(workspace_dir, "generated")
         os.makedirs(generated_dir, exist_ok=True)
@@ -109,6 +117,7 @@ async def chat_completions(
             src_path = storage.files[fid].get("filepath")
             if src_path and os.path.exists(src_path):
                 from utils import uniquify_path
+
                 dst_path = uniquify_path(Path(workspace_dir) / file_obj.filename)
                 if not os.path.exists(dst_path):
                     shutil.copy2(src_path, dst_path)
@@ -123,9 +132,11 @@ async def chat_completions(
 
         # Stream response with code execution (always enabled)
         if stream:
+
             async def generate_stream_with_execution():
                 assistant_reply = ""
                 finished = False
+                ask_detected = False
                 tracker = WorkspaceTracker(workspace_dir, generated_dir)
 
                 while not finished:
@@ -171,6 +182,10 @@ async def chat_completions(
                         if "</Answer>" in cur_res:
                             finished = True
                             break
+                        if re.search(r"<Ask>.*?</Ask>", cur_res, re.DOTALL):
+                            ask_detected = True
+                            finished = True
+                            break
 
                     finish_reason = (
                         last_chunk.choices[0].finish_reason
@@ -196,12 +211,19 @@ async def chat_completions(
                         code_str = extract_code_from_segment(cur_res)
                         if code_str:
                             code_str = Chinese_matplot_str + "\n" + code_str
-                            exe_output = await execute_code_safe_async(code_str, workspace_dir)
+                            exe_output = await execute_code_safe_async(
+                                code_str, workspace_dir
+                            )
                             artifacts = tracker.diff_and_collect()
-                            exe_str = f"\n<Execute>\n```\n{exe_output}\n```\n</Execute>\n"
+                            exe_str = (
+                                f"\n<Execute>\n```\n{exe_output}\n```\n</Execute>\n"
+                            )
                             file_block = render_file_block(
-                                    artifacts, workspace_dir, current_thread_id, generated_files
-                                )
+                                artifacts,
+                                workspace_dir,
+                                current_thread_id,
+                                generated_files,
+                            )
                             assistant_reply += exe_str + file_block
 
                             # Stream execution result
@@ -221,13 +243,19 @@ async def chat_completions(
                                 }
                                 yield f"data: {json.dumps(chunk_data)}\n\n"
 
-                            vllm_messages.append({"role": "execute", "content": exe_output})
+                            vllm_messages.append(
+                                {"role": "execute", "content": exe_output}
+                            )
                         else:
                             finished = True
 
                 # Generate and stream report
                 report_block = generate_report_from_messages(
-                    messages, assistant_reply, workspace_dir, current_thread_id, generated_files
+                    messages,
+                    assistant_reply,
+                    workspace_dir,
+                    current_thread_id,
+                    generated_files,
                 )
                 if report_block:
                     for char in report_block:
@@ -260,11 +288,7 @@ async def chat_completions(
                     "created": int(time.time()),
                     "model": model,
                     "choices": [
-                        {
-                            "index": 0,
-                            "delta": final_chunk_data,
-                            "finish_reason": "stop"
-                        }
+                        {"index": 0, "delta": final_chunk_data, "finish_reason": "stop"}
                     ],
                 }
 
@@ -275,12 +299,15 @@ async def chat_completions(
                 yield f"data: {json.dumps(final_chunk)}\n\n"
                 yield "data: [DONE]\n\n"
 
-            return StreamingResponse(generate_stream_with_execution(), media_type="text/event-stream")
+            return StreamingResponse(
+                generate_stream_with_execution(), media_type="text/event-stream"
+            )
 
         else:
             # Non-streaming response processed with code execution workflow (always enabled)
             assistant_reply = ""
             finished = False
+            ask_detected = False
             generated_files = []
             tracker = WorkspaceTracker(workspace_dir, generated_dir)
 
@@ -310,6 +337,10 @@ async def chat_completions(
                     if "</Answer>" in cur_res:
                         finished = True
                         break
+                    if re.search(r"<Ask>.*?</Ask>", cur_res, re.DOTALL):
+                        ask_detected = True
+                        finished = True
+                        break
 
                 has_code_segment = "<Code>" in cur_res
                 has_closed_code = "</Code>" in cur_res
@@ -331,22 +362,29 @@ async def chat_completions(
                     if code_str:
                         code_str = Chinese_matplot_str + "\n" + code_str
                         # Use async version of execute_code_safe to avoid blocking
-                        exe_output = await execute_code_safe_async(code_str, workspace_dir)
+                        exe_output = await execute_code_safe_async(
+                            code_str, workspace_dir
+                        )
                         artifacts = tracker.diff_and_collect()
                         exe_str = f"\n<Execute>\n```\n{exe_output}\n```\n</Execute>\n"
                         file_block = render_file_block(
-                                    artifacts, workspace_dir, current_thread_id, generated_files
-                                )
+                            artifacts, workspace_dir, current_thread_id, generated_files
+                        )
                         assistant_reply += exe_str + file_block
                         vllm_messages.append({"role": "execute", "content": exe_output})
                     else:
                         finished = True
 
-            # Generate report
-            report_block = generate_report_from_messages(
-                messages, assistant_reply, workspace_dir, current_thread_id, generated_files
-            )
-            assistant_reply += report_block
+            # Generate report (only if not ask_detected)
+            if not ask_detected:
+                report_block = generate_report_from_messages(
+                    messages,
+                    assistant_reply,
+                    workspace_dir,
+                    current_thread_id,
+                    generated_files,
+                )
+                assistant_reply += report_block
 
             result_content = assistant_reply
 

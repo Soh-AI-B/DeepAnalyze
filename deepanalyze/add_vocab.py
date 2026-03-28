@@ -87,6 +87,8 @@ def main():
             "</Execute>",
             "<Answer>",
             "</Answer>",
+            "<Ask>",
+            "</Ask>",
         ]
         print(f"🔹 Adding default tokens: {new_tokens}")
 
