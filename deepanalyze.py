@@ -122,8 +122,9 @@ class DeepAnalyzeVLLM:
 
                  response_message.append(ans)
 
-                 # Check for <Ask> (any occurrence) - stop generation if Ask token appears
-                 if "<Ask>" in ans:
+                 # Check for <Ask> block (complete)
+                 ask_match = re.search(r"<Ask>.*?</Ask>", ans, re.DOTALL)
+                 if ask_match:
                      break
 
                  # Check for <Code> block

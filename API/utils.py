@@ -100,15 +100,17 @@ def prepare_vllm_messages(
             vllm_messages.append({"role": role, "content": content})
 
     # If the last message is a user message and the previous message is an assistant
-    # containing an <Ask> tag, prefix the user message with '[USER]: ' to indicate
-    # it is an answer to the ask (matching training data format)
+    # containing a complete <Ask>...</Ask> block, prefix the user message with '[USER]: '
+    # to indicate it is an answer to the ask (matching training data format)
     if len(vllm_messages) >= 2:
         last_msg = vllm_messages[-1]
         prev_msg = vllm_messages[-2]
+        prev_content = prev_msg.get("content", "")
         if (
             last_msg.get("role") == "user"
             and prev_msg.get("role") == "assistant"
-            and "<Ask>" in prev_msg.get("content", "")
+            and "<Ask>" in prev_content
+            and "</Ask>" in prev_content
         ):
             original_content = last_msg.get("content", "")
             vllm_messages[-1]["content"] = f"[USER]: {original_content}"

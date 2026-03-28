@@ -182,10 +182,6 @@ async def chat_completions(
                         if "</Answer>" in cur_res:
                             finished = True
                             break
-                        if "<Ask>" in cur_res:
-                            ask_detected = True
-                            finished = True
-                            break
 
                     finish_reason = (
                         last_chunk.choices[0].finish_reason
@@ -195,19 +191,25 @@ async def chat_completions(
 
                     has_code_segment = "<Code>" in cur_res
                     has_closed_code = "</Code>" in cur_res
+                    has_ask_segment = "<Ask>" in cur_res
+                    has_closed_ask = "</Ask>" in cur_res
 
-                    if finish_reason == "stop" and not finished:
+                    if last_finish_reason == "stop" and not finished:
                         if has_code_segment and not has_closed_code:
                             cur_res += "</Code>"
                             assistant_reply += "</Code>"
                             has_closed_code = True
-                        elif not has_code_segment:
-                            finished = True
+                        if has_ask_segment and not has_closed_ask:
+                            cur_res += "</Ask>"
+                            assistant_reply += "</Ask>"
+                            has_closed_ask = True
 
-                    # Handle code execution
-                    if has_code_segment and has_closed_code and not finished:
+                    # Determine next action
+                    if has_ask_segment and has_closed_ask:
+                        ask_detected = True
+                        finished = True
+                    elif has_code_segment and has_closed_code and not finished:
                         vllm_messages.append({"role": "assistant", "content": cur_res})
-
                         code_str = extract_code_from_segment(cur_res)
                         if code_str:
                             code_str = Chinese_matplot_str + "\n" + code_str
@@ -246,33 +248,83 @@ async def chat_completions(
                             vllm_messages.append(
                                 {"role": "execute", "content": exe_output}
                             )
-                        else:
-                            finished = True
+                    else:
+                        finished = True
 
-                # Generate and stream report
-                report_block = generate_report_from_messages(
-                    messages,
-                    assistant_reply,
-                    workspace_dir,
-                    current_thread_id,
-                    generated_files,
-                )
-                if report_block:
-                    for char in report_block:
-                        chunk_data = {
-                            "id": f"chatcmpl-{uuid.uuid4().hex[:24]}",
-                            "object": "chat.completion.chunk",
-                            "created": int(time.time()),
-                            "model": model,
-                            "choices": [
-                                {
-                                    "index": 0,
-                                    "delta": {"content": char},
-                                    "finish_reason": None,
-                                }
-                            ],
-                        }
-                        yield f"data: {json.dumps(chunk_data)}\n\n"
+                # Handle Ask token: if Ask appears, stop and wait for user response
+                if not ask_detected and "<Ask>" in cur_res:
+                    if "</Ask>" not in cur_res:
+                        cur_res += "</Ask>"
+                        assistant_reply += "</Ask>"
+                    ask_detected = True
+                    finished = True
+
+                # Handle code execution
+                if has_code_segment and has_closed_code and not finished:
+                    vllm_messages.append({"role": "assistant", "content": cur_res})
+
+                    code_str = extract_code_from_segment(cur_res)
+                    if code_str:
+                        code_str = Chinese_matplot_str + "\n" + code_str
+                        exe_output = await execute_code_safe_async(
+                            code_str, workspace_dir
+                        )
+                        artifacts = tracker.diff_and_collect()
+                        exe_str = f"\n<Execute>\n```\n{exe_output}\n```\n</Execute>\n"
+                        file_block = render_file_block(
+                            artifacts,
+                            workspace_dir,
+                            current_thread_id,
+                            generated_files,
+                        )
+                        assistant_reply += exe_str + file_block
+
+                        # Stream execution result
+                        for char in exe_str:
+                            chunk_data = {
+                                "id": f"chatcmpl-{uuid.uuid4().hex[:24]}",
+                                "object": "chat.completion.chunk",
+                                "created": int(time.time()),
+                                "model": model,
+                                "choices": [
+                                    {
+                                        "index": 0,
+                                        "delta": {"content": char},
+                                        "finish_reason": None,
+                                    }
+                                ],
+                            }
+                            yield f"data: {json.dumps(chunk_data)}\n\n"
+
+                        vllm_messages.append({"role": "execute", "content": exe_output})
+                    else:
+                        finished = True
+
+                # Generate and stream report (only if not ask_detected)
+                if not ask_detected:
+                    report_block = generate_report_from_messages(
+                        messages,
+                        assistant_reply,
+                        workspace_dir,
+                        current_thread_id,
+                        generated_files,
+                    )
+                    if report_block:
+                        for char in report_block:
+                            chunk_data = {
+                                "id": f"chatcmpl-{uuid.uuid4().hex[:24]}",
+                                "object": "chat.completion.chunk",
+                                "created": int(time.time()),
+                                "model": model,
+                                "choices": [
+                                    {
+                                        "index": 0,
+                                        "delta": {"content": char},
+                                        "finish_reason": None,
+                                    }
+                                ],
+                            }
+                            yield f"data: {json.dumps(chunk_data)}\n\n"
 
                 # Send final chunk with generated files and thread_id
                 final_chunk_data = {}
@@ -335,10 +387,6 @@ async def chat_completions(
                         assistant_reply += delta
                     last_finish_reason = chunk.choices[0].finish_reason
                     if "</Answer>" in cur_res:
-                        finished = True
-                        break
-                    if "<Ask>" in cur_res:
-                        ask_detected = True
                         finished = True
                         break
 
