@@ -241,50 +241,8 @@ async def chat_completions(
                             vllm_messages.append({"role": "execute", "content": exe_output})
                         else:
                             finished = True
-                    else:
-                        finished = True
-                    elif has_code_segment and has_closed_code and not finished:
-                        vllm_messages.append({"role": "assistant", "content": cur_res})
-                        code_str = extract_code_from_segment(cur_res)
-                        if code_str:
-                            code_str = Chinese_matplot_str + "\n" + code_str
-                            exe_output = await execute_code_safe_async(
-                                code_str, workspace_dir
-                            )
-                            artifacts = tracker.diff_and_collect()
-                            exe_str = (
-                                f"\n<Execute>\n```\n{exe_output}\n```\n</Execute>\n"
-                            )
-                            file_block = render_file_block(
-                                artifacts,
-                                workspace_dir,
-                                current_thread_id,
-                                generated_files,
-                            )
-                            assistant_reply += exe_str + file_block
-
-                            # Stream execution result
-                            for char in exe_str:
-                                chunk_data = {
-                                    "id": f"chatcmpl-{uuid.uuid4().hex[:24]}",
-                                    "object": "chat.completion.chunk",
-                                    "created": int(time.time()),
-                                    "model": model,
-                                    "choices": [
-                                        {
-                                            "index": 0,
-                                            "delta": {"content": char},
-                                            "finish_reason": None,
-                                        }
-                                    ],
-                                }
-                                yield f"data: {json.dumps(chunk_data)}\n\n"
-
-                            vllm_messages.append(
-                                {"role": "execute", "content": exe_output}
-                            )
-                    else:
-                        finished = True
+                     else:
+                         finished = True
 
                 # Handle Ask token: if Ask appears, stop and wait for user response
                 if not ask_detected and "<Ask>" in cur_res:
@@ -444,22 +402,7 @@ async def chat_completions(
                     ask_detected = True
                     finished = True
                     vllm_messages.append({"role": "assistant", "content": cur_res})
-                elif has_code_segment and has_closed_code and not finished:
-                    vllm_messages.append({"role": "assistant", "content": cur_res})
-                    code_str = extract_code_from_segment(cur_res)
-                    if code_str:
-                        code_str = Chinese_matplot_str + "\n" + code_str
-                        exe_output = await execute_code_safe_async(code_str, workspace_dir)
-                        artifacts = tracker.diff_and_collect()
-                        exe_str = f"\n<Execute>\n```\n{exe_output}\n```\n</Execute>\n"
-                        file_block = render_file_block(
-                                    artifacts, workspace_dir, current_thread_id, generated_files
-                                )
-                        assistant_reply += exe_str + file_block
 
-                        vllm_messages.append({"role": "execute", "content": exe_output})
-                    else:
-                        finished = True
                 else:
                     finished = True
 
