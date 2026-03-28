@@ -109,12 +109,16 @@ class DeepAnalyzeVLLM:
                 response.raise_for_status()
                 response_data = response.json()
 
-                ans = response_data["choices"][0]["message"]["content"]
-                stop_reason = response_data["choices"][0].get("stop_reason")
-                if stop_reason == "</Code>":
-                    ans += "</Code>"
-                elif stop_reason == "</Ask>":
-                    ans += "</Ask>"
+                 ans = response_data["choices"][0]["message"]["content"]
+                 stop_reason = response_data["choices"][0].get("stop_reason")
+                 if stop_reason == "</Code>":
+                     ans += "</Code>"
+                 elif stop_reason == "</Ask>":
+                     ans += "</Ask>"
+
+                 # Ensure Ask block is closed (if model didn't generate closing tag)
+                 if "<Ask>" in ans and "</Ask>" not in ans:
+                     ans += "</Ask>"
 
                  response_message.append(ans)
 

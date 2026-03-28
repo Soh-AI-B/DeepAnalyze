@@ -99,6 +99,20 @@ def prepare_vllm_messages(
         if role:
             vllm_messages.append({"role": role, "content": content})
 
+    # If the last message is a user message and the previous message is an assistant
+    # containing an <Ask> tag, prefix the user message with '[USER]: ' to indicate
+    # it is an answer to the ask (matching training data format)
+    if len(vllm_messages) >= 2:
+        last_msg = vllm_messages[-1]
+        prev_msg = vllm_messages[-2]
+        if (
+            last_msg.get("role") == "user"
+            and prev_msg.get("role") == "assistant"
+            and "<Ask>" in prev_msg.get("content", "")
+        ):
+            original_content = last_msg.get("content", "")
+            vllm_messages[-1]["content"] = f"[USER]: {original_content}"
+
     # Locate last user message
     last_user_idx: Optional[int] = None
     for idx in range(len(vllm_messages) - 1, -1, -1):
